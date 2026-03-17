@@ -1,0 +1,49 @@
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+*.egg
+*.egg-info/
+dist/
+build/
+*.whl
+
+# Virtual environments
+venv/
+.venv/
+env/
+.env/
+
+# Jupyter
+.ipynb_checkpoints/
+
+# Model weights & checkpoints
+*.pth
+*.pt
+*.h5
+*.pkl
+*.ckpt
+checkpoints/
+saved_models/
+
+# Dataset files (large files)
+*.csv
+*.zip
+*.tar.gz
+data/
+
+# Logs & outputs
+logs/
+*.log
+runs/
+outputs/
+
+# IDE / OS
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+
+# Environment variables
+.env
