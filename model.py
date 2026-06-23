@@ -4,7 +4,7 @@ import torchvision.models as models
 
 
 RESNET50_FEATURE_DIM = 2048
-
+  
 
 class ResNet50Backbone(nn.Module):
 

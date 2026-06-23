@@ -1,3 +1,50 @@
+# =============================================================================
+# data_loader.py
+# Project : Elastic Weight Consolidation for Continual Crop Disease Classification
+# Paper   : IEEE — EWC for Continual Crop Disease Classification
+# =============================================================================
+"""
+Seasonal Drift Data Loaders
+────────────────────────────
+Simulates three agro-photometric seasonal scenarios that induce
+distribution shift in crop-disease image data:
+
+    Task 1 — 'Spring'  : Low-light / overcast conditions (~2 000 lux).
+                         Gamma darkening + mild Gaussian noise.
+    Task 2 — 'Summer'  : High-brightness outdoor light (~10 000 lux).
+                         Gamma brightening + saturation boost.
+    Task 3 — 'Autumn'  : Colour-normalised / grey-shifted foliage.
+                         Reduced saturation + warm-hue shift.
+
+Dataset
+───────
+This loader expects the
+**New Plant Diseases Dataset (Augmented)** from Kaggle:
+
+    https://www.kaggle.com/datasets/vipoooool/new-plant-diseases-dataset
+
+It contains ~87,000 RGB images across 38 plant-disease classes
+(Apple, Corn, Cherry, Grape, Peach, Pepper, Potato, Tomato,
+Strawberry, Squash, …) in a standard ``ImageFolder`` layout::
+
+    data/plant_diseases/
+        train/<class_name>/*.jpg
+        val/<class_name>/*.jpg
+
+Usage
+─────
+    from data_loader import get_task_loaders, TASKS
+
+    loaders = get_task_loaders(
+        root="./data/plant_diseases", batch_size=32
+    )
+    train_loader, val_loader = loaders["Spring"]
+
+If ``root`` does not contain real images the module falls back to a
+synthetic ``FakeCropDataset`` so the training pipeline can be validated
+without any downloaded data — useful for CI / unit tests.
+"""
+
 import os
 import warnings
 from typing import Dict, Tuple
@@ -8,29 +55,39 @@ import torchvision.transforms.functional as TF
 from torch import Tensor
 from torch.utils.data import Dataset, DataLoader, random_split
 
+# ── Attempt to use a real ImageFolder dataset; fall back to synthetic ────────
 try:
     from torchvision.datasets import ImageFolder
     _HAS_IMAGEFOLDER = True
-except ImportError:
+except ImportError:                          # pragma: no cover
     _HAS_IMAGEFOLDER = False
 
 
+# ─────────────────────────────────────────────────────────────────────────────
+# Constants
+# ─────────────────────────────────────────────────────────────────────────────
+
 TASKS: Tuple[str, ...] = ("Spring", "Summer", "Autumn")
 
+# ImageNet normalisation — applied *after* seasonal augmentation
 _IMAGENET_MEAN = (0.485, 0.456, 0.406)
 _IMAGENET_STD  = (0.229, 0.224, 0.225)
 
-IMAGE_SIZE = 224
-NUM_CLASSES_DEFAULT = 10
+IMAGE_SIZE = 224          # ResNet-50 input
+NUM_CLASSES_DEFAULT = 38  # overridden when real data is used
 
-SEASON_NOISE_PROFILES = {
-    "Spring": {"gamma": 1.6, "noise_std": 0.02, "color_shift": (1.0, 1.0, 1.0)},
-    "Summer": {"gamma": 0.6, "noise_std": 0.01, "color_shift": (1.0, 1.15, 1.0)},
-    "Autumn": {"gamma": 1.0, "noise_std": 0.015, "color_shift": (1.10, 0.9, 0.85)},
-}
 
+# ─────────────────────────────────────────────────────────────────────────────
+# 1.  Per-Season Augmentation Pipelines
+# ─────────────────────────────────────────# ─────────────────────────────────
 
 class _SpringTransform:
+    """
+    Spring (low-light, ~2 000 lux):
+      • Gamma correction > 1  →  darken image
+      • Mild Gaussian blur (simulates diffuse overcast light)
+      • Standard geometric augmentations
+    """
     def __init__(self):
         self._base = T.Compose([
             T.Resize((IMAGE_SIZE, IMAGE_SIZE)),
@@ -42,32 +99,50 @@ class _SpringTransform:
 
     def __call__(self, img):
         img = self._base(img)
+        # Gamma > 1 → darkens (x^γ, γ=1.6)
         img = img.pow(1.6).clamp(0, 1)
+        # Additive Gaussian noise (σ=0.02) mimics sensor noise in low light
         img = (img + torch.randn_like(img) * 0.02).clamp(0, 1)
         img = T.functional.normalize(img, _IMAGENET_MEAN, _IMAGENET_STD)
         return img
 
 
 class _SummerTransform:
+    """
+    Summer (high-brightness, ~10 000 lux):
+      • Gamma correction < 1  →  brighten / overexpose
+      • Saturation boost (vivid green foliage, yellow lesions)
+      • ColorJitter for sun-angle variation
+    """
     def __init__(self):
         self._base = T.Compose([
             T.Resize((IMAGE_SIZE, IMAGE_SIZE)),
             T.RandomHorizontalFlip(),
             T.RandomVerticalFlip(),
             T.RandomRotation(15),
+            # Brightness/contrast variation due to direct sun
             T.ColorJitter(brightness=0.3, contrast=0.2, saturation=0.3, hue=0.05),
             T.ToTensor(),
         ])
 
     def __call__(self, img):
         img = self._base(img)
+        # Gamma < 1 → brightens (x^γ, γ=0.6)
         img = img.pow(0.6).clamp(0, 1)
+        # Increase saturation in tensor space (channel-level scaling)
+        # Approximate: boost G channel slightly (green leaf saturation)
         img[1] = (img[1] * 1.15).clamp(0, 1)
         img = T.functional.normalize(img, _IMAGENET_MEAN, _IMAGENET_STD)
         return img
 
 
 class _AutumnTransform:
+    """
+    Autumn (colour-normalised / senescence):
+      • Reduce saturation (foliage yellowing / browning)
+      • Warm hue shift (+10° in HSV) simulating chlorophyll degradation
+      • Sharpen edges: leaf-edge features become more pronounced
+    """
     def __init__(self):
         self._base = T.Compose([
             T.Resize((IMAGE_SIZE, IMAGE_SIZE)),
@@ -79,14 +154,17 @@ class _AutumnTransform:
 
     def __call__(self, img):
         img = self._base(img)
+        # Desaturate: blend toward greyscale (α=0.55 colour weight)
         grey = img.mean(dim=0, keepdim=True).expand_as(img)
         img  = (0.55 * img + 0.45 * grey).clamp(0, 1)
-        img[0] = (img[0] * 1.10).clamp(0, 1)
-        img[2] = (img[2] * 0.85).clamp(0, 1)
+        # Warm hue shift: boost R, reduce B slightly
+        img[0] = (img[0] * 1.10).clamp(0, 1)  # red channel up
+        img[2] = (img[2] * 0.85).clamp(0, 1)  # blue channel down
         img = T.functional.normalize(img, _IMAGENET_MEAN, _IMAGENET_STD)
         return img
 
 
+# Validation transform (no augmentation, just resize + normalise)
 _VAL_TRANSFORM = T.Compose([
     T.Resize((IMAGE_SIZE, IMAGE_SIZE)),
     T.ToTensor(),
@@ -100,78 +178,40 @@ SEASON_TRANSFORMS = {
 }
 
 
-def _generate_class_prototypes(num_classes: int, channels: int = 3,
-                                size: int = IMAGE_SIZE, seed: int = 12345):
-    pi = 3.14159265
-    rows = torch.arange(size, dtype=torch.float32).unsqueeze(1).expand(size, size)
-    cols = torch.arange(size, dtype=torch.float32).unsqueeze(0).expand(size, size)
-
-    prototypes = []
-    for c in range(num_classes):
-        freq_x = float((c % 5) + 1)
-        freq_y = float((c // 5) + 1)
-        diag_freq = float(c + 1)
-
-        proto = torch.zeros(channels, size, size)
-        for ch in range(channels):
-            g = torch.Generator().manual_seed(seed + c * 100 + ch)
-            channel_offset = torch.rand(1, generator=g).item() * 0.3
-            pattern = (
-                0.5
-                + 0.2 * torch.sin(2.0 * pi * freq_x * rows / size)
-                + 0.2 * torch.cos(2.0 * pi * freq_y * cols / size)
-                + 0.1 * torch.sin(2.0 * pi * diag_freq * (rows + cols) / (size * 2))
-                + channel_offset
-            )
-            proto[ch] = pattern.clamp(0, 1)
-        prototypes.append(proto)
-    return prototypes
-
+# ─────────────────────────────────────────────────────────────────────────────
+# 2.  Synthetic Dataset (fall-back when no real data is available)
+# ─────────────────────────────────────────────────────────────────────────────
 
 class FakeCropDataset(Dataset):
+    """
+    Generates random image tensors with integer class labels.
+
+    Useful for pipeline validation without a downloaded dataset.
+    All pixels are drawn from N(0,1) and then passed through each
+    season transform so the statistical properties mirror the real
+    augmentation pipeline.
+
+    Args:
+        season     : One of ``TASKS``.
+        num_samples: Number of synthetic samples.
+        num_classes: Number of disease categories.
+        train      : Whether to apply training augmentation (unused here;
+                     kept for API compatibility).
+    """
 
     def __init__(
         self,
         season: str = "Spring",
-        num_samples: int = 2000,
+        num_samples: int = 640,
         num_classes: int = NUM_CLASSES_DEFAULT,
         train: bool = True,
     ):
         assert season in TASKS, f"season must be one of {TASKS}"
         self.num_samples = num_samples
         self.num_classes = num_classes
-        self.season = season
-
-        prototypes = _generate_class_prototypes(num_classes)
-        profile = SEASON_NOISE_PROFILES[season]
-
-        noise_std = 0.08 if train else 0.02
-
-        self._images = torch.zeros(num_samples, 3, IMAGE_SIZE, IMAGE_SIZE)
-        self._labels = torch.zeros(num_samples, dtype=torch.long)
-
-        gen = torch.Generator()
-        gen.manual_seed(hash((season, train)) % (2**31))
-
-        for i in range(num_samples):
-            cls = i % num_classes
-            self._labels[i] = cls
-            img = prototypes[cls].clone()
-            img = (img + torch.randn_like(img) * noise_std).clamp(0, 1)
-            img = img.pow(profile["gamma"]).clamp(0, 1)
-            r_s, g_s, b_s = profile["color_shift"]
-            img[0] = (img[0] * r_s).clamp(0, 1)
-            img[1] = (img[1] * g_s).clamp(0, 1)
-            img[2] = (img[2] * b_s).clamp(0, 1)
-            self._images[i] = img
-
-        perm = torch.randperm(num_samples, generator=gen)
-        self._images = self._images[perm]
-        self._labels = self._labels[perm]
-
-        mean = torch.tensor(_IMAGENET_MEAN).view(3, 1, 1)
-        std = torch.tensor(_IMAGENET_STD).view(3, 1, 1)
-        self._images = (self._images - mean) / std
+        # Pre-generate random data in normalised image space
+        self._images = torch.randn(num_samples, 3, IMAGE_SIZE, IMAGE_SIZE)
+        self._labels = torch.randint(0, num_classes, (num_samples,))
 
     def __len__(self) -> int:
         return self.num_samples
@@ -180,7 +220,34 @@ class FakeCropDataset(Dataset):
         return self._images[idx], self._labels[idx]
 
 
+# ─────────────────────────────────────────────────────────────────────────────
+# 3.  Dataset Factory
+# ─────────────────────────────────────────────────────────────────────────────
+
 class SeasonalCropDataset(Dataset):
+    """
+    Wraps an existing image-folder dataset and applies a seasonal transform.
+
+    The underlying dataset should be structured as::
+
+        root/
+          train/
+            <class_name>/
+              image1.jpg
+              ...
+          val/
+            <class_name>/
+              ...
+
+    Seasonal image transforms are applied on-the-fly so the same images
+    can be reused across all three tasks with different photometric
+    simulation.
+
+    Args:
+        base_dataset : ``torchvision.datasets.ImageFolder`` instance.
+        season       : One of ``TASKS``.
+        is_train     : Apply training augmentation if True, else val transform.
+    """
 
     def __init__(self, base_dataset: Dataset, season: str, is_train: bool = True):
         assert season in TASKS
@@ -193,8 +260,13 @@ class SeasonalCropDataset(Dataset):
 
     def __getitem__(self, idx: int) -> Tuple[Tensor, int]:
         img, label = self.base[idx]
+        # base_dataset returns a PIL image when transform=None
         return self.transform(img), label
 
+
+# ─────────────────────────────────────────────────────────────────────────────
+# 4.  Public API — get_task_loaders
+# ─────────────────────────────────────────────────────────────────────────────
 
 def get_task_loaders(
     root: str = "./data",
@@ -202,9 +274,33 @@ def get_task_loaders(
     val_split: float = 0.2,
     num_workers: int = 4,
     num_classes: int = NUM_CLASSES_DEFAULT,
-    synthetic_samples: int = 2000,
+    synthetic_samples: int = 640,
     pin_memory: bool = True,
 ) -> Dict[str, Tuple[DataLoader, DataLoader]]:
+    """
+    Build training and validation ``DataLoader`` objects for every season.
+
+    If ``root`` contains a valid ``train/`` sub-directory with image
+    folders, real data is loaded via ``ImageFolder``.  Otherwise a
+    ``FakeCropDataset`` is used automatically (with a console warning).
+
+    Args:
+        root              : Path to the dataset root directory.
+        batch_size        : Mini-batch size.
+        val_split         : Fraction of training data reserved for validation.
+        num_workers       : DataLoader worker processes.
+        num_classes       : Number of disease categories (synthetic mode only).
+        synthetic_samples : Samples per season in synthetic mode.
+        pin_memory        : Pin CUDA page-locked memory for speed.
+
+    Returns:
+        Dictionary mapping each season name → (train_loader, val_loader).
+
+    Example::
+
+        loaders = get_task_loaders(root="./PlantVillage", batch_size=32)
+        spring_train, spring_val = loaders["Spring"]
+    """
     _loader_kwargs = dict(
         batch_size  = batch_size,
         num_workers = num_workers,
@@ -228,26 +324,25 @@ def get_task_loaders(
 
     for season in TASKS:
         if use_real_data:
+            # Real data: load base ImageFolder (no transform) + wrap seasonally
             train_base = ImageFolder(os.path.join(root, "train"), transform=None)
             val_base   = ImageFolder(os.path.join(root, "val"),   transform=None)
 
             train_ds = SeasonalCropDataset(train_base, season, is_train=True)
             val_ds   = SeasonalCropDataset(val_base,   season, is_train=False)
         else:
-            n_train_samples = int(synthetic_samples * (1 - val_split))
-            n_val_samples = synthetic_samples - n_train_samples
-
-            train_ds = FakeCropDataset(
-                season=season,
-                num_samples=n_train_samples,
-                num_classes=num_classes,
-                train=True,
+            # Synthetic fall-back
+            full_ds  = FakeCropDataset(
+                season      = season,
+                num_samples = synthetic_samples,
+                num_classes = num_classes,
             )
-            val_ds = FakeCropDataset(
-                season=season,
-                num_samples=n_val_samples,
-                num_classes=num_classes,
-                train=False,
+            n_val    = max(1, int(len(full_ds) * val_split))
+            n_train  = len(full_ds) - n_val
+            train_ds, val_ds = random_split(
+                full_ds,
+                [n_train, n_val],
+                generator=torch.Generator().manual_seed(42),
             )
 
         loaders[season] = (

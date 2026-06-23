@@ -1,3 +1,17 @@
+"""
+train.py — Sequential EWC training for continual crop-disease classification.
+
+Dataset
+───────
+Expects the **New Plant Diseases Dataset (Augmented)** from Kaggle:
+    https://www.kaggle.com/datasets/vipoooool/new-plant-diseases-dataset
+(38 plant-disease classes, ~87k images, standard ImageFolder layout
+under ``--data_root`` with ``train/<class>/*.jpg`` and ``val/<class>/*.jpg``).
+
+Falls back to a synthetic dataset if the real data is missing — see
+``data_loader.py`` for the fallback behaviour.
+"""
+
 import argparse
 import json
 import os
@@ -17,15 +31,23 @@ from torch.utils.data import DataLoader
 
 def parse_args() -> argparse.Namespace:
     p = argparse.ArgumentParser(
-        description="Sequential EWC training for crop disease classification"
+        description=(
+            "Sequential EWC training for crop disease classification.\n"
+            "Dataset: New Plant Diseases Dataset (Augmented) — "
+            "https://www.kaggle.com/datasets/vipoooool/new-plant-diseases-dataset"
+        )
     )
-    p.add_argument("--data_root",   type=str,   default="./data")
+    p.add_argument(
+        "--data_root", type=str, default="./data/plant_diseases",
+        help="Path to dataset root with train/<class>/ and val/<class>/ subdirs "
+             "(New Plant Diseases Dataset: https://www.kaggle.com/datasets/vipoooool/new-plant-diseases-dataset)",
+    )
     p.add_argument("--save_dir",    type=str,   default="./checkpoints")
     p.add_argument("--epochs",      type=int,   default=15)
     p.add_argument("--batch_size",  type=int,   default=32)
     p.add_argument("--lr",          type=float, default=5e-4)
     p.add_argument("--lambda_ewc",  type=float, default=500.0)
-    p.add_argument("--num_classes", type=int,   default=10)
+    p.add_argument("--num_classes", type=int,   default=38)
     p.add_argument("--fisher_samples", type=int, default=512)
     p.add_argument("--num_workers", type=int,   default=4)
     p.add_argument("--no_pretrain", action="store_true")

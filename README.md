@@ -80,7 +80,7 @@ Loss = CrossEntropy + (λ/2) × Σ F_i × (θ_i - θ*_i)²
 
 ```bash
 # Clone the repository
-git clone https://github.com/YOUR_USERNAME/ewc-crop-disease.git
+git clone https://github.com/aniketmaiti2006-a11y/ewc-crop-disease.git
 cd ewc-crop-disease
 
 # Install dependencies
@@ -97,13 +97,13 @@ python train.py
 
 ```bash
 python train.py \
-  --data_root ./data \
+  --data_root ./data/plant_diseases \
   --save_dir ./checkpoints \
   --epochs 15 \
   --batch_size 32 \
   --lr 5e-4 \
   --lambda_ewc 500.0 \
-  --num_classes 10 \
+  --num_classes 38 \
   --fisher_samples 512 \
   --num_workers 4 \
   --seed 42
@@ -111,13 +111,13 @@ python train.py \
 
 | Argument | Default | Description |
 |---|---|---|
-| `--data_root` | `./data` | Path to dataset |
+| `--data_root` | `./data/plant_diseases` | Path to dataset |
 | `--save_dir` | `./checkpoints` | Directory to save model checkpoints |
 | `--epochs` | `15` | Number of epochs per task |
 | `--batch_size` | `32` | Batch size |
 | `--lr` | `5e-4` | Learning rate |
 | `--lambda_ewc` | `500.0` | EWC regularization strength |
-| `--num_classes` | `10` | Number of disease classes |
+| `--num_classes` | `38` | Number of disease classes |
 | `--fisher_samples` | `512` | Samples used to compute Fisher matrix |
 | `--num_workers` | `4` | DataLoader worker threads |
 | `--no_pretrain` | `False` | Disable ImageNet pretrained weights |
@@ -125,23 +125,33 @@ python train.py \
 
 ---
 
-## 📂 Dataset Format (for Real Data)
+## 📂 Dataset Used: New Plant Diseases Dataset
 
-Organize your dataset as:
+This project uses the **[New Plant Diseases Dataset (Augmented)](https://www.kaggle.com/datasets/vipoooool/new-plant-diseases-dataset)** from Kaggle. 
+
+**Dataset Highlights:**
+- **Source:** Kaggle (`vipoooool/new-plant-diseases-dataset`)
+- **Total Images:** ~87,000 RGB images
+- **Classes:** 38 distinct classes (diseases and healthy crop leaves)
+- **Crops Included:** Apple, Corn, Cherry, Grape, Peach, Pepper, Potato, Tomato, Strawberry, and Squash.
+
+### Organizing the Downloaded Data
+
+If you download the dataset yourself, organize it in the root directory like this:
 
 ```
 data/
-├── train/
-│   ├── class_0/
-│   ├── class_1/
-│   └── ...
-└── val/
-    ├── class_0/
-    ├── class_1/
-    └── ...
+└── plant_diseases/
+    ├── train/
+    │   ├── Apple___Apple_scab/
+    │   ├── Tomato___Late_blight/
+    │   └── ... (38 classes)
+    └── val/
+        ├── Apple___Apple_scab/
+        └── ...
 ```
 
-> ⚠️ If no real dataset is found, the project automatically uses **synthetic data** for pipeline validation.
+> ⚠️ **Note:** If no real dataset is found, the project will automatically fall back to using **synthetic data** for pipeline validation.
 
 ---
 
