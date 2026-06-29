@@ -195,7 +195,105 @@ def plot_forgetting(results: dict) -> None:
 
 
 # ---------------------------------------------------------------------------
-# Figure 4 — combined 2x3 grid for the paper's main results section.
+# Figure 4 — headline "result card" for the README hero spot.
+# ---------------------------------------------------------------------------
+def plot_result_card(results: dict) -> None:
+    """Single hero image: BWT headline + per-season forgetting bars.
+
+    Sized for a GitHub README (~1000x520 px at 100 DPI). Two panels:
+      • Left  — the BWT score with a short verdict line.
+      • Right — the R_tt / R_Tt per-season bars (the same data as `forgetting`
+                but compressed to one strip so it pairs with the headline).
+    """
+    fig = plt.figure(figsize=(10.0, 5.2))
+    gs = fig.add_gridspec(1, 2, width_ratios=[1.05, 1.45], wspace=0.18)
+
+    # ----- Left panel: BWT headline -----
+    ax_head = fig.add_subplot(gs[0, 0])
+    ax_head.axis("off")
+
+    bwt = results["BWT"]
+    passes = bwt >= -2.9  # catastrophic-forgetting threshold from README.
+    verdict_colour = "#2ca02c" if passes else "#d62728"
+    verdict_text = "PASSED" if passes else "FAILED"
+    bwt_colour = "#2ca02c" if bwt >= 0 else "#d62728"
+
+    ax_head.text(
+        0.5, 0.84,
+        "Backward Transfer",
+        ha="center", va="center",
+        fontsize=16, fontweight="bold", color="#222222",
+    )
+    ax_head.text(
+        0.5, 0.55,
+        f"{bwt:+.2f} %",
+        ha="center", va="center",
+        fontsize=56, fontweight="bold", color=bwt_colour,
+    )
+    ax_head.text(
+        0.5, 0.27,
+        "Catastrophic-forgetting criterion",
+        ha="center", va="center", fontsize=10, color="#555555",
+    )
+    ax_head.text(
+        0.5, 0.13,
+        f"{verdict_text}   (threshold ≥ −2.9 %)",
+        ha="center", va="center",
+        fontsize=11, fontweight="bold", color=verdict_colour,
+    )
+
+    # Decorative underline below the headline.
+    ax_head.plot([0.18, 0.82], [0.66, 0.66],
+                 color="#cccccc", lw=1.2, transform=ax_head.transAxes)
+
+    # ----- Right panel: per-season forgetting -----
+    ax = fig.add_subplot(gs[0, 1])
+    r_tt = results["R_tt"]
+    r_Tt = results["R_Tt"]
+
+    x = np.arange(len(SEASONS))
+    width = 0.36
+
+    rtt_bars = ax.bar(x - width / 2, [r_tt[s] for s in SEASONS], width,
+                      color="#9ecae1", edgecolor="#1f77b4",
+                      label=r"$R_{t,t}$ (just after training)")
+    rTt_bars = ax.bar(x + width / 2, [r_Tt[s] for s in SEASONS], width,
+                      color="#fdae6b", edgecolor="#d95f02",
+                      label=r"$R_{T,t}$ (after all tasks)")
+
+    for bars in (rtt_bars, rTt_bars):
+        for bar in bars:
+            h = bar.get_height()
+            ax.text(bar.get_x() + bar.get_width() / 2, h + 0.6,
+                    f"{h:.2f}", ha="center", va="bottom", fontsize=8)
+
+    for i, season in enumerate(SEASONS):
+        delta = r_Tt[season] - r_tt[season]
+        y_top = max(r_tt[season], r_Tt[season]) + 6
+        ax.annotate(
+            f"Δ={delta:+.2f}",
+            xy=(i, y_top),
+            ha="center", fontsize=8,
+            color=("#d62728" if delta < 0 else "#2ca02c"),
+            fontweight="bold",
+        )
+
+    ax.set_xticks(x)
+    ax.set_xticklabels(SEASONS, fontsize=10)
+    ax.set_ylabel("Accuracy (%)", fontsize=10)
+    ax.set_ylim(0, max(max(r_tt.values()), max(r_Tt.values())) * 1.30)
+    ax.legend(loc="upper right", frameon=True, fontsize=8)
+    ax.set_title("Per-season forgetting", fontsize=11, fontweight="bold")
+
+    fig.suptitle(
+        "EWC continual learning  —  seasonal crop-disease tasks",
+        y=1.00, fontsize=13, fontweight="bold",
+    )
+    _save(fig, "result")
+
+
+# ---------------------------------------------------------------------------
+# Figure 5 — combined 2x3 grid for the paper's main results section.
 # ---------------------------------------------------------------------------
 def plot_combined(results: dict) -> None:
     fig, axes = plt.subplots(2, 3, figsize=(9.5, 5.4), sharex="col")
@@ -259,6 +357,7 @@ def main() -> None:
     plot_accuracy_curves(results)
     plot_forgetting(results)
     plot_combined(results)
+    plot_result_card(results)
     print("Done.")
 
 

@@ -26,6 +26,8 @@ The model uses a **pretrained ResNet-50 backbone** and a custom classification h
 
 Spring and Summer transfer well to the joint model; Autumn forgets the most, matching the EWC penalty growth on that task. See the [📈 Figures](#-figures) section below for plots.
 
+![EWC result card — BWT and per-season forgetting](figures/result.png)
+
 ---
 
 ## 🧠 Key Concepts
@@ -249,6 +251,12 @@ Use this figure as the headline result showing how much each season's accuracy d
 A 2×3 grid (rows = loss / accuracy, cols = seasons) annotated with the run's λ_EWC, epochs/task, and BWT. This is the single figure to use in the **main results section** of the paper.
 
 ![EWC continual-learning results](figures/combined.png)
+
+### 5. Result Card — `result.{pdf,png}` (README hero)
+
+A single wide image that pairs the **BWT headline** (with PASS/FAIL verdict) on the left with the **per-season forgetting** bars on the right. Sized for the top of the README so a reader sees the headline result before scrolling.
+
+![EWC result card](figures/result.png)
 
 ### LaTeX / Word Usage
 
