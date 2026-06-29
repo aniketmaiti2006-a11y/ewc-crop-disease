@@ -12,6 +12,22 @@ The model uses a **pretrained ResNet-50 backbone** and a custom classification h
 
 ---
 
+## 📊 Results Summary (this run)
+
+> Generated from `./checkpoints/results.json` — λ_EWC = 400, 5 epochs/task, synthetic data.
+
+| Metric | Spring | Summer | Autumn |
+|---|---|---|---|
+| **R_tt** (just after training) | 13.28 % | 11.72 % | 12.50 % |
+| **R_Tt** (after all tasks)     | 12.50 % | 10.16 % |  8.59 % |
+| **Δ (forgetting)**             | −0.78 % | −1.56 % | **−3.91 %** |
+
+**BWT = −1.17 %** → ✅ Catastrophic-forgetting criterion (≥ −2.9 %) **PASSED**.
+
+Spring and Summer transfer well to the joint model; Autumn forgets the most, matching the EWC penalty growth on that task. See the [📈 Figures](#-figures) section below for plots.
+
+---
+
 ## 🧠 Key Concepts
 
 | Concept | Description |
@@ -33,7 +49,10 @@ ewc_crop_disease/
 ├── ewc_utils.py      # EWC class: Fisher matrix computation, penalty & loss
 ├── data_loader.py    # Seasonal dataset loaders (real or synthetic)
 ├── train.py          # Main training script with sequential EWC training
+├── plot_results.py   # Generate paper-quality figures from results.json
 ├── requirements.txt  # Python dependencies
+├── checkpoints/      # Saved models + results.json (created at runtime)
+├── figures/          # Generated PDF + PNG figures (created by plot_results.py)
 └── README.md
 ```
 
@@ -179,6 +198,77 @@ After training, the following are saved to `./checkpoints/`:
 
 ---
 
+## 📈 Figures
+
+Paper-quality figures are generated from `checkpoints/results.json` by `plot_results.py`. Each figure is saved in both **vector PDF** (for LaTeX) and **300 DPI PNG** (for Word / Google Docs), with Type-42 fonts and consistent season colours:
+
+| Season | Colour |
+|---|---|
+| 🌸 Spring | `#2ca02c` (green) |
+| ☀️ Summer | `#ff7f0e` (orange) |
+| 🍂 Autumn | `#d62728` (red) |
+
+### Generating the Figures
+
+```bash
+pip install matplotlib   # if not already installed
+python plot_results.py
+```
+
+All figures are written to `./figures/`.
+
+### 1. Loss Decomposition — `loss_curves.{pdf,png}`
+
+One panel per seasonal task. Each panel decomposes the total training loss into:
+- **Total loss** (solid line, season colour) — what the optimiser minimises
+- **CE loss** (dashed line) — supervised cross-entropy term
+- **EWC penalty** (dotted grey) — regulariser anchoring important weights
+
+Use this figure to show that the EWC penalty grows task-over-task as the Fisher information accumulates.
+
+![Loss decomposition across seasonal tasks](figures/loss_curves.png)
+
+### 2. Train vs. Validation Accuracy — `accuracy_curves.{pdf,png}`
+
+One panel per seasonal task, shared 0–100% y-axis. The open circle on the final validation point marks R_tt (accuracy on task *t* immediately after training).
+
+Use this figure to show per-task learning dynamics and the train/val gap.
+
+![Train vs. validation accuracy across seasonal tasks](figures/accuracy_curves.png)
+
+### 3. Forgetting Summary — `forgetting.{pdf,png}`
+
+Grouped bar chart of **R_tt** (accuracy just after training) vs. **R_Tt** (accuracy after all tasks) per season, with **Δ = R_Tt − R_tt** annotations above each pair and the **BWT** value in the title.
+
+Use this figure as the headline result showing how much each season's accuracy dropped after subsequent tasks were learned.
+
+![Forgetting across seasonal tasks](figures/forgetting.png)
+
+### 4. Combined Main-Results Figure — `combined.{pdf,png}`
+
+A 2×3 grid (rows = loss / accuracy, cols = seasons) annotated with the run's λ_EWC, epochs/task, and BWT. This is the single figure to use in the **main results section** of the paper.
+
+![EWC continual-learning results](figures/combined.png)
+
+### LaTeX / Word Usage
+
+```latex
+% LaTeX — uses the vector PDF
+\begin{figure}[t]
+  \centering
+  \includegraphics[width=\linewidth]{figures/combined.pdf}
+  \caption{EWC continual-learning results across seasonal tasks. BWT = ..., $\lambda_{\text{EWC}}$ = ...}
+  \label{fig:combined}
+\end{figure}
+```
+
+```markdown
+<!-- Markdown / Word — uses the high-DPI PNG -->
+![EWC continual-learning results](figures/combined.png)
+```
+
+---
+
 ## 🧪 Evaluation Metric: Backward Transfer (BWT)
 
 ```
@@ -197,7 +287,11 @@ BWT = (1 / T-1) × Σ (R_Tt - R_tt)
 torch>=2.0.0
 torchvision>=0.15.0
 numpy>=1.24.0
+matplotlib>=3.5.0
 ```
+
+`matplotlib` is only required for figure generation via `plot_results.py`; the training
+pipeline (`train.py`) does not depend on it.
 
 ---
 
