@@ -26,7 +26,6 @@ The model uses a **pretrained ResNet-50 backbone** and a custom classification h
 
 Spring and Summer transfer well to the joint model; Autumn forgets the most, matching the EWC penalty growth on that task. See the [📈 Figures](#-figures) section below for plots.
 
-![EWC result card — BWT and per-season forgetting](figures/result.png)
 
 ---
 
