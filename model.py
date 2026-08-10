@@ -3,6 +3,14 @@ import torch.nn as nn
 import torchvision.models as models
 
 
+# 1. Dynamically target the GPU if available (for cloud), otherwise fall back to CPU (for local testing)
+device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+
+# 2. When you initialize your model instance later in the script:
+#     model = CropDiseaseModel(...)
+#     model = model.to(device)  # Forces the model layers into cloud GPU memory
+
+
 RESNET50_FEATURE_DIM = 2048
   
 
